@@ -27,7 +27,7 @@ type Props = {
   onPageChange: (p: number) => void;
   onLoaded?: (numPages: number) => void;
   /** rasio lebar / tinggi halaman yang sedang tampil */
-  onAspect?: (ratio: number) => void;
+  onAspect?: (ratio: number, widthPt: number, heightPt: number) => void;
   items?: OverlayItem[];
   onItemChange?: (id: string, patch: { x?: number; y?: number; w?: number }) => void;
 };
@@ -106,7 +106,7 @@ export default function PdfViewer({ data, page, onPageChange, onLoaded, onAspect
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
       setSize({ w: cssW, h: (base.height * cssW) / base.width });
-      onAspectRef.current?.(base.width / base.height);
+      onAspectRef.current?.(base.width / base.height, base.width, base.height);
       const task = p.render({ canvas, viewport });
       taskRef.current = task;
       try { await task.promise; } catch (e: any) { if (e?.name !== 'RenderingCancelledException') setError('Gagal menampilkan halaman.'); }

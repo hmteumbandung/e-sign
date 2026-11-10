@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Trash2, Upload } from 'lucide-react';
+import { Archive, FileSpreadsheet, FileText, FileUp, Pencil, Power, Search, Trash2, Upload } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import EditSignerDialog from './EditSignerDialog';
+import ImportSignersDialog from './ImportSignersDialog';
+import { downloadCsv, downloadXlsx, stamp } from '../../lib/exporter';
 import type { Doc, Profile, Signer } from '../../types';
 
 type Props = {
@@ -18,6 +21,8 @@ const MAX_PNG = 2 * 1024 * 1024;
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47];
 
 type Pending = { kind: 'owners' | 'signatures'; items: Signer[] } | null;
+type StatusF = 'active' | 'inactive' | 'archived' | 'all';
+const STATUS_LABEL: Record<string, string> = { active: 'Aktif', inactive: 'Nonaktif', archived: 'Diarsipkan' };
 
 export default function SignersPage({ signers, docs = [], reload, user, isAdmin = false, signaturesOnly = false }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -27,6 +32,13 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
   }, [isAdmin]);
 
   const [q, setQ] = useState('');
+  const [statusF, setStatusF] = useState<StatusF>('active');
+  const [periodF, setPeriodF] = useState('');
+  const [editing, setEditing] = useState<Signer | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [archPeriod, setArchPeriod] = useState('');
+  const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [nim, setNim] = useState('');
   const [position, setPosition] = useState('');
@@ -41,10 +53,20 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadFor = useRef<Signer | null>(null);
 
+  const periods = useMemo(() => [...new Set(signers.map((s) => s.period || '').filter(Boolean))].sort(), [signers]);
+  const statusCount = useMemo(() => {
+    const c = { active: 0, inactive: 0, archived: 0, all: signers.length } as Record<string, number>;
+    signers.forEach((s) => { c[s.status || 'active'] = (c[s.status || 'active'] || 0) + 1; });
+    return c;
+  }, [signers]);
   const filtered = useMemo(() => {
     const needle = q.toLowerCase();
-    return signers.filter((s) => [s.full_name, s.position, s.student_id || '', s.department || ''].join(' ').toLowerCase().includes(needle));
-  }, [signers, q]);
+    return signers.filter((s) => {
+      if (statusF !== 'all' && (s.status || 'active') !== statusF) return false;
+      if (periodF && (s.period || '') !== periodF) return false;
+      return [s.full_name, s.position, s.student_id || '', s.department || '', s.period || ''].join(' ').toLowerCase().includes(needle);
+    });
+  }, [signers, q, statusF, periodF]);
 
   // buang pilihan yang barisnya sudah tidak ada
   useEffect(() => { setSelected((cur) => { const ids = new Set(signers.map((s) => s.id)); const n = new Set([...cur].filter((i) => ids.has(i))); return n.size === cur.size ? cur : n; }); }, [signers]);
@@ -67,9 +89,9 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
         if (up.error) throw up.error;
         path = safe;
       }
-      const r = await supabase.from('signature_owners').insert({ full_name: name, student_id: nim || null, position, department: department || null, period, status: 'active', signature_path: path });
+      const r = await supabase.from('signature_owners').insert({ full_name: name, student_id: nim || null, position, department: department || null, period, status: 'active', signature_path: path, phone: phone.trim() || null });
       if (r.error) { if (path) await supabase.storage.from('signature-files').remove([path]); throw r.error; }
-      setName(''); setNim(''); setPosition(''); setDepartment(''); setFile(null);
+      setName(''); setNim(''); setPosition(''); setDepartment(''); setPhone(''); setFile(null);
       await reload();
       alert('Data berhasil disimpan.');
     } catch (e: any) { alert(e.message || 'Gagal menyimpan data'); } finally { setBusy(false); }
@@ -100,6 +122,25 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
     setRowMsg({ kind: 'ok', text: pending.kind === 'owners' ? `${ids.length} data pengurus dihapus.` : 'Tanda tangan dihapus.' });
     await reload();
   }
+
+  // ---- status: nonaktifkan / arsipkan / aktifkan ----
+  async function setStatus(list: Signer[], status: 'active' | 'inactive' | 'archived') {
+    if (!supabase || !list.length) return;
+    setRowMsg(null);
+    const r = await supabase.from('signature_owners').update({ status }).in('id', list.map((x) => x.id)).select('id');
+    if (r.error) { setRowMsg({ kind: 'error', text: r.error.message }); return; }
+    setRowMsg({ kind: 'ok', text: `${r.data?.length || 0} pengurus ${status === 'active' ? 'diaktifkan' : status === 'inactive' ? 'dinonaktifkan' : 'diarsipkan'}.` });
+    setSelected(new Set());
+    await reload();
+  }
+  async function archivePeriod() {
+    const list = signers.filter((x) => (x.period || '') === archPeriod && (x.status || 'active') === 'active');
+    if (!list.length) throw new Error('Tidak ada pengurus aktif pada periode itu.');
+    await setStatus(list, 'archived');
+    setArchiving(false);
+  }
+  const exportRows = (list: Signer[]) => [['Nama', 'NIM', 'Jabatan', 'Departemen', 'Periode', 'Status', 'Telepon', 'File tanda tangan', 'Akun login'],
+    ...list.map((x) => [x.full_name, x.student_id || '', x.position, x.department || '', x.period || '', STATUS_LABEL[x.status || 'active'] || x.status || '', x.phone || '', x.signature_path ? 'Ada' : 'Belum ada', x.user_id ? 'Terhubung' : ''])];
 
   // ---- unggah / ganti file tanda tangan ----
   async function onPickSignature(e: React.ChangeEvent<HTMLInputElement>) {
@@ -133,7 +174,26 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
       <section className="panel">
         <div className="panel-head">
           <div><h3>{title}</h3><p>Kelola identitas pengurus dan aset tanda tangan organisasi.</p></div>
-          <span className="badge">{signers.length} data</span>
+          <div className="head-actions">
+            <span className="badge">{filtered.length} data</span>
+            <button type="button" className="button ghost sm" onClick={() => downloadXlsx(`pengurus-${stamp()}.xlsx`, [{ name: 'Pengurus', rows: exportRows(chosen.length ? chosen : filtered) }])}><FileSpreadsheet size={14} />Excel</button>
+            <button type="button" className="button ghost sm" onClick={() => downloadCsv(`pengurus-${stamp()}.csv`, exportRows(chosen.length ? chosen : filtered))}><FileText size={14} />CSV</button>
+            {user && !signaturesOnly && <button type="button" className="button ghost sm" onClick={() => setImporting(true)}><FileUp size={14} />Impor Excel</button>}
+            {isAdmin && !signaturesOnly && <button type="button" className="button ghost sm" onClick={() => { setArchPeriod(periods[0] || ''); setArchiving(true); }}><Archive size={14} />Arsipkan periode</button>}
+          </div>
+        </div>
+        <div className="gbar" role="tablist" aria-label="Status pengurus">
+          {(['active', 'inactive', 'archived', 'all'] as StatusF[]).map((k) => (
+            <button type="button" role="tab" aria-selected={statusF === k} key={k} className={`gtab ${statusF === k ? 'on' : ''}`} onClick={() => setStatusF(k)}>{k === 'all' ? 'Semua' : STATUS_LABEL[k]} <b>{statusCount[k] || 0}</b></button>
+          ))}
+        </div>
+        <div className="filter-row">
+          <label>Periode kabinet
+            <select value={periodF} onChange={(e) => setPeriodF(e.target.value)}>
+              <option value="">Semua periode</option>
+              {periods.map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </label>
         </div>
         <div className="searchbox"><Search size={17} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama, NIM, jabatan, atau departemen..." /></div>
 
@@ -142,7 +202,14 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
             <b>{chosen.length} data dipilih</b>
             {signaturesOnly
               ? <button type="button" className="button danger sm" disabled={!chosen.some((s) => s.signature_path)} onClick={() => setPending({ kind: 'signatures', items: chosen.filter((s) => s.signature_path) })}><Trash2 size={14} />Hapus tanda tangan terpilih</button>
-              : <button type="button" className="button danger sm" onClick={() => setPending({ kind: 'owners', items: chosen })}><Trash2 size={14} />Hapus data terpilih</button>}
+              : (
+                <>
+                  <button type="button" className="button ghost sm" onClick={() => setStatus(chosen, 'active')}><Power size={14} />Aktifkan</button>
+                  <button type="button" className="button ghost sm" onClick={() => setStatus(chosen, 'inactive')}><Power size={14} />Nonaktifkan</button>
+                  <button type="button" className="button ghost sm" onClick={() => setStatus(chosen, 'archived')}><Archive size={14} />Arsipkan</button>
+                  <button type="button" className="button danger sm" onClick={() => setPending({ kind: 'owners', items: chosen })}><Trash2 size={14} />Hapus data terpilih</button>
+                </>
+              )}
             <button type="button" className="button ghost sm" onClick={() => setSelected(new Set())}>Batal pilih</button>
           </div>
         )}
@@ -154,7 +221,7 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
             <thead>
               <tr>
                 {isAdmin && <th className="cell-check"><input type="checkbox" aria-label="Pilih semua" checked={allOn} onChange={(e) => toggleAll(e.target.checked)} /></th>}
-                <th>Nama</th><th>NIM</th><th>Jabatan</th><th>Departemen</th><th>Periode</th><th>Status TTE</th>
+                <th>Nama</th><th>NIM</th><th>Jabatan</th><th>Departemen</th><th>Periode</th><th>Status</th><th>TTE</th>
                 {isAdmin && <th>Akun login</th>}
                 {isAdmin && <th></th>}
               </tr>
@@ -168,6 +235,7 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
                   <td>{s.position}</td>
                   <td>{s.department || '—'}</td>
                   <td>{s.period || '—'}</td>
+                  <td><span className={`status ${(s.status || 'active') === 'active' ? 'good' : 'pending'}`}>{STATUS_LABEL[s.status || 'active'] || s.status}</span></td>
                   <td><span className={`status ${s.signature_path ? 'good' : 'pending'}`}>{s.signature_path ? 'Terdaftar' : 'Belum ada file'}</span></td>
                   {isAdmin && <td><AccountLink signer={s} profiles={profiles} reload={reload} /></td>}
                   {isAdmin && (
@@ -179,14 +247,17 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
                             {s.signature_path && <button type="button" className="button danger sm" onClick={() => setPending({ kind: 'signatures', items: [s] })}><Trash2 size={13} />Hapus TTE</button>}
                           </>
                         ) : (
-                          <button type="button" className="button danger sm" onClick={() => setPending({ kind: 'owners', items: [s] })}><Trash2 size={13} />Hapus</button>
+                          <>
+                            <button type="button" className="button ghost sm" onClick={() => setEditing(s)}><Pencil size={13} />Edit</button>
+                            <button type="button" className="button danger sm" onClick={() => setPending({ kind: 'owners', items: [s] })}><Trash2 size={13} />Hapus</button>
+                          </>
                         )}
                       </div>
                     </td>
                   )}
                 </tr>
               ))}
-              {!filtered.length && <tr><td colSpan={isAdmin ? 9 : 6} className="empty">{signers.length ? 'Tidak ada data yang cocok.' : 'Belum ada data pengurus.'}</td></tr>}
+              {!filtered.length && <tr><td colSpan={isAdmin ? 10 : 7} className="empty">{signers.length ? 'Tidak ada data yang cocok.' : 'Belum ada data pengurus.'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -203,11 +274,25 @@ export default function SignersPage({ signers, docs = [], reload, user, isAdmin 
               <label>Jabatan<input required value={position} onChange={(e) => setPosition(e.target.value)} placeholder="Ketua Umum" /></label>
               <label>Departemen / Bidang<input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Sekretariat / Medkominfo" /></label>
               <label>Periode kabinet<input value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
+              <label>Nomor HP / WhatsApp<input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="08xxxxxxxxxx" /></label>
               <label>File tanda tangan PNG<input type="file" accept="image/png" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
               <div className="form-actions"><button disabled={busy} className="button primary">{busy ? 'Menyimpan...' : 'Simpan data pengurus'}</button></div>
             </form>
           )}
         </section>
+      )}
+
+      {editing && <EditSignerDialog signer={editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />}
+      {importing && <ImportSignersDialog existing={signers} defaultPeriod={period} onClose={() => setImporting(false)} onDone={async (n) => { setImporting(false); setRowMsg({ kind: 'ok', text: `${n} pengurus diimpor.` }); await reload(); }} />}
+      {archiving && (
+        <ConfirmDialog title="Arsipkan satu periode kabinet?" confirmLabel="Arsipkan" danger={false} onConfirm={archivePeriod} onClose={() => setArchiving(false)}>
+          <p>Semua pengurus <b>aktif</b> pada periode yang dipilih diubah menjadi <b>Diarsipkan</b>. Data tetap tersimpan, tetapi tanda tangannya tidak dapat dipakai lagi. Dokumen yang sudah ditandatangani tidak terpengaruh.</p>
+          <label className="dlg-field">Periode
+            <select value={archPeriod} onChange={(e) => setArchPeriod(e.target.value)}>
+              {periods.map((x) => <option key={x} value={x}>{x} ({signers.filter((y) => (y.period || '') === x && (y.status || 'active') === 'active').length} aktif)</option>)}
+            </select>
+          </label>
+        </ConfirmDialog>
       )}
 
       {pending && (

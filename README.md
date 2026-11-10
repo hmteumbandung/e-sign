@@ -174,3 +174,34 @@ Khusus admin: tombol **Hapus permanen** pada dokumen `verified`/`revoked`. Wajib
 
 ### Hapus data pengurus dan tanda tangan
 Khusus admin. **Database Pengurus**: hapus satu atau banyak pengurus (beserta file tanda tangannya). **Database Tanda Tangan**: hapus file tanda tangan saja (data pengurus tetap), serta **Unggah/Ganti** file. Dokumen yang sudah ditandatangani tidak terpengaruh. Penghapusan tercatat di Riwayat Aktivitas.
+
+
+## Pembaruan v3: alur persetujuan, penomoran, verifikasi, surat masuk
+
+Urutan SQL (SQL Editor): `schema.sql` → `account-setup.sql` → `esign-setup.sql` (terbaru) → `features-setup.sql` → `workflow-setup.sql` (baru). Jangan menjalankan ulang `schema.sql` setelah `workflow-setup.sql` (policy baca publik lama akan terpasang lagi).
+
+### Alur persetujuan
+- **Banyak penandatangan** (1 sampai 8, berurutan atau bebas urutan) diatur saat unggah dan di Edit dokumen. Tiap penandatangan membubuhkan tanda tangannya; **footer QR dipasang penandatangan terakhir** dan memuat semua nama (`{penandatangan}`). Dokumen menjadi *Terverifikasi* setelah semua selesai. Penyimpanan tiap langkah dikunci di database (hash PDF harus sama dengan versi terakhir), jadi dua orang yang menandatangani bersamaan tidak saling menimpa; yang kedua diminta memuat ulang.
+- **Tolak / kembalikan dengan catatan:** tombol di menu Penandatanganan (penandatangan yang ditugaskan atau admin). Status menjadi *Ditolak*, catatan tampil di Manajemen Dokumen. Sekretaris menekan **Revisi**, mengunggah file revisi (opsional), lalu **Simpan & ajukan ulang**: tanda tangan lama dibuang dan alur mulai dari awal (nomor revisi bertambah).
+- **Tautan permintaan tanda tangan:** buka **Detail** dokumen, lalu kirim lewat WhatsApp (nomor HP diisi di Edit pengurus) atau email, atau salin tautannya. Penerima harus login.
+- **Notifikasi otomatis (opsional, belum teruji):** email/WhatsApp tanpa klik manual memerlukan layanan luar. Kode siap pakai ada di `supabase/functions/notify-signers`: (1) aktifkan ekstensi `pg_net` di Database → Extensions, (2) `supabase functions deploy notify-signers --no-verify-jwt` dan atur secrets (`NOTIFY_SECRET`, `APP_URL`, `RESEND_API_KEY`, `MAIL_FROM`, `FONNTE_TOKEN`), (3) isi tabel rahasia lewat SQL Editor:
+  ```sql
+  insert into public.private_settings(key, value) values
+    ('notify_url', 'https://PROJECT_REF.supabase.co/functions/v1/notify-signers'),
+    ('notify_secret', 'ISI_SAMA_DENGAN_NOTIFY_SECRET')
+  on conflict (key) do update set value = excluded.value;
+  ```
+  Pengingat berkala (opsional) dapat dijadwalkan dengan `pg_cron` memanggil fungsi yang sama dengan body `{"type":"reminder","days":3}`. Tanpa langkah ini, pengingat tetap muncul di aplikasi (lonceng, dashboard, penanda "Tertunda N hari").
+
+### Penomoran otomatis
+Nomor surat terisi otomatis dan dapat diubah manual. Format dan reset (bulanan/tahunan/tidak pernah) diatur admin di **Pengaturan**, dan dapat dibedakan per kelompok surat (kode, format, reset). Token: `{no} {bulan} {bulan_romawi} {tahun} {kode}`. Nomor diambil secara atomik saat disimpan, jadi tidak ada nomor ganda atau terlewat; nomor yang sudah dipakai ditolak database.
+
+### Verifikasi
+Halaman Verifikasi kini memakai fungsi `verify_document`, sehingga tabel dokumen **tidak lagi dapat dibaca anonim**. Halaman menampilkan penandatangan beserta waktunya, pratinjau PDF, unduhan dokumen asli, dan pemindai QR dengan kamera (Chrome/Edge/Android; di browser lain pakai kamera bawaan ponsel). Setiap pemeriksaan dicatat; admin melihat jumlahnya di **Detail** dokumen. Pratinjau/unduhan publik dapat dimatikan per dokumen (kotak centang di Detail); dokumen yang masih bisa diunduh publik dapat diunduh siapa pun yang memegang QR atau kodenya. Jumlah verifikasi dapat digelembungkan siapa pun yang tahu kode, jadi dipakai sebagai petunjuk, bukan bukti.
+
+### Lainnya
+- **Surat masuk & disposisi:** menu baru (admin, sekretaris, penandatangan). Penerima disposisi dapat memperbarui status dan tanggapan.
+- **Pengurus:** edit data, nonaktifkan/arsipkan (tanda tangan tidak dapat dipakai lagi), arsipkan satu periode, impor Excel/CSV (templat tersedia di dialog impor), ekspor.
+- **Ekspor Excel/CSV** untuk dokumen, pengurus, surat masuk, dan riwayat aktivitas; **unduh banyak PDF sebagai ZIP** (centang dokumen).
+- **Footer QR:** bawaan 17 × 2 cm di tengah bawah halaman; lebar dan tinggi dapat diatur dalam cm. Teks footer dapat disimpan sebagai **default tim** (admin/sekretaris).
+- **Dashboard:** grafik surat per bulan dan daftar dokumen yang menunggu terlalu lama. **Mode gelap** dan perbaikan tampilan ponsel.

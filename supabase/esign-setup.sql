@@ -39,7 +39,8 @@ declare
   hex_re constant text := '^[0-9a-f]{64}$';
 begin
   -- SQL Editor / service role (auth.uid() null) dan fungsi penghapusan akun (flag lokal transaksi) tidak dibatasi.
-  if uid is null or coalesce(current_setting('app.account_deletion', true), '') = 'on' then return new; end if;
+  if uid is null or coalesce(current_setting('app.account_deletion', true), '') = 'on'
+     or coalesce(current_setting('app.workflow', true), '') = 'on' then return new; end if;
 
   if new.sha256 is not null and new.sha256 !~ hex_re then
     raise exception 'sha256 harus 64 karakter heksadesimal huruf kecil';
@@ -223,7 +224,7 @@ create trigger signature_owners_guard_trg before insert or update on public.sign
 ------------------------------------------------------------------
 -- 5. Storage
 --    * dokumen : admin/secretary/signer dapat membaca; signer dapat mengunggah PDF bertanda tangan
---    * file tanda tangan : hanya admin atau PEMILIKNYA (pengurus yang terhubung ke akun) yang dapat membaca
+--    * file tanda tangan : hanya admin atau PEMILIKNYA (pengurus AKTIF yang terhubung ke akun) yang dapat membaca
 ------------------------------------------------------------------
 drop policy if exists "authorized users read private files" on storage.objects;
 drop policy if exists "read documents bucket" on storage.objects;
@@ -237,7 +238,7 @@ create policy "read signature files admin or owner" on storage.objects for selec
 using (
   bucket_id = 'signature-files' and (
     public.current_role() in ('super_admin','admin')
-    or exists (select 1 from public.signature_owners o where o.signature_path = storage.objects.name and o.user_id = auth.uid())
+    or exists (select 1 from public.signature_owners o where o.signature_path = storage.objects.name and o.user_id = auth.uid() and o.status = 'active')
   )
 );
 

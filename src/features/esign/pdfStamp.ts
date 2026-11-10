@@ -9,6 +9,8 @@ export type Placement = {
   qr: { x: number; y: number; w: number } | null;
   /** pasang blok QR footer di semua halaman (posisi relatif sama) */
   qrAllPages?: boolean;
+  /** rasio tinggi / lebar blok footer (bawaan: 2 cm / 17 cm) */
+  qrAspect?: number;
   /** tanda tangan/paraf tambahan pada halaman lain (atau halaman yang sama) */
   extras?: { page: number; x: number; y: number; w: number }[];
 };
@@ -20,6 +22,8 @@ export type StampInfo = {
   signerPosition: string;
   originalSha256: string;
   signedAt: Date;
+  /** seluruh penandatangan dokumen (bila lebih dari satu) untuk placeholder {penandatangan} */
+  signers?: { name: string; position: string }[];
   /** nomor surat (opsional, untuk placeholder {nomor}) */
   documentNumber?: string;
   /** templat teks footer; placeholder: {penandatangan} {jabatan} {waktu} {kode} {nomor} */
@@ -60,9 +64,13 @@ export const DEFAULT_FOOTER_TEXT =
 /** Mengisi placeholder pada templat teks footer. */
 export function resolveFooterText(template: string | undefined, info: StampInfo) {
   const t = (template && template.trim()) || DEFAULT_FOOTER_TEXT;
+  const multi = (info.signers?.length || 0) > 1;
+  const names = multi
+    ? info.signers!.map((x) => (x.position ? `${x.name} (${x.position})` : x.name)).reduce((acc, cur, i, arr) => (i === 0 ? cur : i === arr.length - 1 ? `${acc} dan ${cur}` : `${acc}, ${cur}`), '')
+    : info.signerName || '';
   return t
-    .replace(/\{penandatangan\}/gi, info.signerName || '')
-    .replace(/\{jabatan\}/gi, info.signerPosition || '')
+    .replace(/\{penandatangan\}/gi, names)
+    .replace(/\{jabatan\}/gi, multi ? '' : info.signerPosition || '')
     .replace(/\{waktu\}/gi, formatSignedAt(info.signedAt))
     .replace(/\{kode\}/gi, shortCode(info.verificationId))
     .replace(/\{nomor\}/gi, info.documentNumber || '')
@@ -71,8 +79,10 @@ export function resolveFooterText(template: string | undefined, info: StampInfo)
     .trim();
 }
 
-/** Rasio tinggi / lebar blok verifikasi footer (tetap, agar pratinjau = hasil akhir). */
-export const QR_BLOCK_ASPECT = 0.17;
+/** Ukuran bawaan footer: lebar 17 cm, tinggi 2 cm (rasio dipakai agar pratinjau = hasil akhir). */
+export const QR_DEFAULT_W_CM = 17;
+export const QR_DEFAULT_H_CM = 2;
+export const QR_BLOCK_ASPECT = QR_DEFAULT_H_CM / QR_DEFAULT_W_CM;
 const BLOCK_W = 1600; // piksel kanvas
 
 function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
@@ -92,18 +102,19 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
  * Menggambar blok verifikasi footer: QR + kode singkat di kiri, teks keterangan (dapat diubah) di kanan.
  * Latar transparan, sehingga menyatu dengan kertas. Ukuran huruf mengecil otomatis agar teks muat.
  */
-export async function renderQrBlock(info: StampInfo): Promise<{ bytes: Uint8Array; dataUrl: string }> {
-  const W = BLOCK_W, H = Math.round(BLOCK_W * QR_BLOCK_ASPECT);
+export async function renderQrBlock(info: StampInfo, aspect: number = QR_BLOCK_ASPECT): Promise<{ bytes: Uint8Array; dataUrl: string }> {
+  const W = BLOCK_W, H = Math.max(110, Math.round(BLOCK_W * aspect));
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, W, H);
 
-  // Kolom kiri: QR + kode
-  const codeH = 40;
-  const qrSize = H - codeH - 12;
-  const qrX = 10, qrY = 6;
+  // Kolom kiri: QR + kode di bawahnya. Ukuran menyesuaikan tinggi blok.
+  const codeFont = Math.max(16, Math.min(30, Math.round(H * 0.14)));
+  const codeH = codeFont + 10;
+  const qrSize = Math.max(60, Math.min(H - codeH - 8, Math.round(W * 0.28)));
+  const qrX = 10, qrY = 4;
   const qrCanvas = document.createElement('canvas');
   await QRCode.toCanvas(qrCanvas, info.verifyUrl, { errorCorrectionLevel: 'M', margin: 1, width: qrSize, color: { dark: '#000000', light: '#ffffff' } });
   ctx.fillStyle = '#ffffff';
@@ -112,21 +123,22 @@ export async function renderQrBlock(info: StampInfo): Promise<{ bytes: Uint8Arra
   ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.font = '400 28px Arial, "DM Sans", sans-serif';
-  ctx.fillText(shortCode(info.verificationId), qrX + qrSize / 2, qrY + qrSize + 32);
+  ctx.font = `400 ${codeFont}px Arial, "DM Sans", sans-serif`;
+  ctx.fillText(shortCode(info.verificationId), qrX + qrSize / 2, qrY + qrSize + codeFont + 2);
 
-  // Kolom kanan: teks, rata tengah
+  // Kolom kanan: teks keterangan rata tengah; huruf mengecil otomatis agar muat.
   const tx = qrX + qrSize + 56;
   const tw = W - tx - 24;
   const text = resolveFooterText(info.footerText, info);
-  let size = 38, lines: string[] = [];
-  for (; size >= 14; size--) {
+  const pad = 8;
+  let size = Math.min(44, Math.round(H * 0.22)), lines: string[] = [];
+  for (; size >= 11; size--) {
     ctx.font = `400 ${size}px Arial, "DM Sans", sans-serif`;
     lines = wrapLines(ctx, text, tw);
-    if (lines.length * size * 1.4 <= H - 16) break;
+    if (lines.length * size * 1.35 <= H - pad * 2) break;
   }
-  const lh = size * 1.4;
-  let y = (H - lines.length * lh) / 2 + size * 1.05;
+  const lh = size * 1.35;
+  let y = (H - lines.length * lh) / 2 + size * 1.02;
   ctx.fillStyle = '#000000';
   for (const l of lines) { ctx.fillText(l, tx + tw / 2, y); y += lh; }
 
@@ -212,7 +224,7 @@ export async function stampPdf(
     );
     const targets = placement.qrAllPages ? pages : [mainPage];
     for (const pg of targets) {
-      const q = await draw(pg, qrBlock.bytes, placement.qr, QR_BLOCK_ASPECT);
+      const q = await draw(pg, qrBlock.bytes, placement.qr, placement.qrAspect ?? QR_BLOCK_ASPECT);
       // Lapisan teks tak kasatmata supaya isi blok dapat dicari/disalin dan dibaca pembaca layar.
       const c = Math.cos((q.rot * Math.PI) / 180), sn = Math.sin((q.rot * Math.PI) / 180);
       textLines.forEach((text, i) => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, FolderPlus, Pencil, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { isInstansi } from '../../lib/instansi';
 import type { Doc, DocGroup } from '../../types';
 
 export const GROUP_COLORS = ['#2563EB', '#16A34A', '#DC2626', '#F59E0B', '#7C3AED', '#0891B2', '#DB2777', '#64748B'];
@@ -55,6 +56,7 @@ export default function GroupManager({ groups, docs, userId, onChanged, onClose 
   const [eNum, setENum] = useState<NumFields>({ code: '', fmt: '', reset: '' });
   const [toDelete, setToDelete] = useState<DocGroup | null>(null);
 
+  const editBuiltin = Boolean(editId && groups.find((g) => g.id === editId && isInstansi(g)));
   const count = (id: string) => docs.filter((d) => d.group_id === id).length;
   const friendly = (m: string) => (/duplicate|unique/i.test(m) ? 'Nama kelompok sudah dipakai.' : /relation|schema cache/i.test(m) ? 'Fitur belum aktif di database. Jalankan supabase/features-setup.sql.' : m);
 
@@ -93,7 +95,7 @@ export default function GroupManager({ groups, docs, userId, onChanged, onClose 
   return (
     <section className="panel group-panel" aria-label="Kelola kelompok surat">
       <div className="panel-head">
-        <div><h3>Kelompok surat</h3><p>Buat kelompok seperti “Surat Keluar”, “Undangan”, atau “SK Kepengurusan”. Menghapus kelompok tidak menghapus surat di dalamnya.</p></div>
+        <div><h3>Instansi &amp; kelompok surat</h3><p>Enam instansi/lembaga bersifat bawaan (warna dan kode dapat diubah). Anda juga dapat menambah kelompok lain. Menghapus kelompok tidak menghapus surat di dalamnya.</p></div>
         <button type="button" className="icon-btn" aria-label="Tutup" onClick={onClose}><X size={18} /></button>
       </div>
 
@@ -110,7 +112,7 @@ export default function GroupManager({ groups, docs, userId, onChanged, onClose 
           <li key={g.id}>
             {editId === g.id ? (
               <div className="group-edit">
-                <input value={eName} maxLength={60} onChange={(e) => setEName(e.target.value)} aria-label="Nama kelompok" />
+                <input value={eName} maxLength={60} disabled={editBuiltin} title={editBuiltin ? 'Nama instansi bawaan tidak dapat diubah' : undefined} onChange={(e) => setEName(e.target.value)} aria-label="Nama kelompok" />
                 <input value={eDesc} maxLength={160} onChange={(e) => setEDesc(e.target.value)} placeholder="Keterangan" aria-label="Keterangan" />
                 <ColorPicker value={eColor} onChange={setEColor} />
                 <div style={{ gridColumn: '1 / -1' }}><NumberingFields v={eNum} onChange={setENum} /></div>
@@ -125,7 +127,7 @@ export default function GroupManager({ groups, docs, userId, onChanged, onClose 
                 <small className="muted">{count(g.id)} surat{g.code ? ` · kode ${g.code}` : ''}{g.description ? ` · ${g.description}` : ''}</small>
                 <span className="row-actions">
                   <button type="button" className="button ghost sm" onClick={() => startEdit(g)}><Pencil size={13} />Ubah</button>
-                  <button type="button" className="button danger sm" onClick={() => setToDelete(g)}><Trash2 size={13} />Hapus</button>
+                  {isInstansi(g) ? <span className="muted small" title="Instansi bawaan tidak dapat dihapus">Instansi bawaan</span> : <button type="button" className="button danger sm" onClick={() => setToDelete(g)}><Trash2 size={13} />Hapus</button>}
                 </span>
               </>
             )}

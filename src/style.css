@@ -2248,3 +2248,21 @@ a.button {
     margin: 14px auto;
   }
 }
+
+/* ---- Tampilan surat per instansi ---- */
+.view-toggle { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
+.view-toggle .button.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+.seed-notice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inst-sections { display: grid; gap: 12px; margin-top: 8px; }
+.inst-section { border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+.inst-section > summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; list-style: none; flex-wrap: wrap; }
+.inst-section > summary::-webkit-details-marker { display: none; }
+.inst-section > summary::before { content: '▸'; color: #64748b; transition: transform .15s; }
+.inst-section[open] > summary::before { transform: rotate(90deg); }
+.inst-count { margin-left: auto; font-size: 12px; color: #64748b; font-weight: 600; }
+.inst-section .table-wrap { border-top: 1px solid #e5e7eb; }
+.inst-empty { padding: 10px 14px 14px; margin: 0; }
+.gbar { flex-wrap: wrap; }
+[data-theme="dark"] .inst-section { background: #111827; border-color: #1f2937; }
+[data-theme="dark"] .inst-section .table-wrap { border-top-color: #1f2937; }
+[data-theme="dark"] .view-toggle .button.on { background: #2563eb; color: #fff; }

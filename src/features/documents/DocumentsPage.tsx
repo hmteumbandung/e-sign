@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, Eye, FileSpreadsheet, FileText, FolderCog, FolderInput, Search, Trash2, UploadCloud } from 'lucide-react';
+import { Archive, Building2, Eye, FileSpreadsheet, FileText, FolderCog, FolderInput, List, Search, Trash2, UploadCloud } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import DocTable, { GroupChip, hashFile, statusLabel } from './DocTable';
@@ -7,6 +7,7 @@ import EditDocumentPanel, { EDITABLE_STATUSES } from './EditDocumentPanel';
 import DocumentDetail from './DocumentDetail';
 import GroupManager from './GroupManager';
 import SignerListEditor, { type SignMode } from './SignerListEditor';
+import { INSTANSI, missingInstansi } from '../../lib/instansi';
 import { downloadCsv, downloadXlsx, downloadZip, stamp, type Cell } from '../../lib/exporter';
 import type { AppSettings, Doc, DocGroup, DocSigner, Signer } from '../../types';
 
@@ -55,6 +56,9 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
   const [bulkMsg, setBulkMsg] = useState('');
   const [zipBusy, setZipBusy] = useState('');
   const [purging, setPurging] = useState<Doc | null>(null);
+  const [view, setView] = useState<'grouped' | 'list'>('grouped');
+  const [seedBusy, setSeedBusy] = useState(false);
+  const [seedMsg, setSeedMsg] = useState('');
 
   const canManage = Boolean(user);
   const owners = signers;
@@ -105,6 +109,18 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
     });
     return () => { off = true; };
   }, [upGroup, canManage, numTouched, docs.length]);
+
+  const missing = useMemo(() => missingInstansi(groups), [groups]);
+
+  /** Buat instansi bawaan yang belum ada (tanpa perlu membuka SQL Editor). */
+  async function seedInstansi() {
+    if (!supabase || !user || !missing.length) return;
+    setSeedBusy(true); setSeedMsg('');
+    const r = await supabase.from('document_groups').insert(missing.map((i) => ({ name: i.name, color: i.color, code: i.code, description: `Surat ${i.name}`, created_by: user.id }))).select('id');
+    setSeedBusy(false);
+    if (r.error) { setSeedMsg(/duplicate|unique/i.test(r.error.message) ? 'Sebagian instansi sudah ada. Muat ulang halaman.' : r.error.message); return; }
+    await reload();
+  }
 
   // ---- aksi ----
   async function removeUnsigned(d: Doc) {
@@ -247,6 +263,50 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
     } finally { setBusy(false); }
   }
 
+  const renderTable = (list: Doc[]) => (
+  <DocTable
+    docs={list}
+    mineIds={new Set(steps.filter((x) => x.status === 'pending' && user && x.user_id === user.id).map((x) => x.document_id))}
+    groups={groupsReady ? groups : undefined}
+    selection={selection}
+    renderSigner={(d) => {
+      const st = stepsOf.get(d.id);
+      if (!st?.length) return d.signer_name || '—';
+      return <div className="schips">{st.map((s) => <span key={s.id} className={`schip ${s.status}`} title={s.signer_position || ''}>{s.step}. {s.signer_name}</span>)}</div>;
+    }}
+    statusExtra={(d) => {
+      if (d.status !== 'pending' || !d.created_at) return null;
+      const age = Math.floor((Date.now() - new Date(d.created_at).getTime()) / dayMs);
+      return age >= settings.reminder_days ? <span className="status attn" title="Menunggu tanda tangan cukup lama">Tertunda {age} hari</span> : null;
+    }}
+    renderGroup={canManage ? (d) => (
+      <select className="group-select" aria-label={`Kelompok untuk ${d.document_number}`} value={d.group_id && groups.some((g) => g.id === d.group_id) ? d.group_id : ''} onChange={(e) => setGroup([d.id], e.target.value || null)}>
+        <option value="">—</option>
+        {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+      </select>
+    ) : (d) => <GroupChip group={groups.find((g) => g.id === d.group_id)} />}
+    actions={user ? (d) => (
+      <div className="row-actions">
+        <button className="button ghost sm" onClick={() => setDetail(d)}><Eye size={13} />Detail</button>
+        {d.file_path && <button className="button ghost sm" onClick={() => openFile(d)}>Unduh</button>}
+        {EDITABLE_STATUSES.includes(d.status) && <button className="button ghost sm" onClick={() => setEditing(d)}>{d.status === 'rejected' ? 'Revisi' : 'Edit'}</button>}
+        {EDITABLE_STATUSES.includes(d.status) && <button className="button danger sm" onClick={() => removeUnsigned(d)}>Hapus</button>}
+        {isAdmin && d.status === 'verified' && <button className="button danger sm" onClick={() => revoke(d)}>Cabut</button>}
+        {isAdmin && (d.status === 'verified' || d.status === 'revoked') && <button className="button danger sm" title="Hapus permanen dokumen bertanda tangan" onClick={() => setPurging(d)}><Trash2 size={13} />Hapus permanen</button>}
+      </div>
+    ) : undefined}
+  />
+  );
+
+  const showGrouped = view === 'grouped' && filter === 'all' && groupsReady && groups.length > 0;
+  const sections = useMemo(() => {
+    const filtered = filtersOn;
+    const secs = groups.map((g) => ({ id: g.id, group: g as DocGroup | null, list: visible.filter((d) => d.group_id === g.id) }));
+    const none = visible.filter((d) => !d.group_id || !groups.some((g) => g.id === d.group_id));
+    if (none.length) secs.push({ id: '__none', group: null, list: none });
+    return filtered ? secs.filter((x) => x.list.length > 0) : secs;
+  }, [groups, visible, filtersOn]);
+
   const selection = canManage ? {
     ids: selected,
     toggle: (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }),
@@ -267,6 +327,13 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
         </div>
 
         {!groupsReady && <p className="notice">Pengelompokan surat belum aktif. Jalankan <code>supabase/features-setup.sql</code> di Supabase SQL Editor.</p>}
+        {groupsReady && canManage && missing.length > 0 && (
+          <div className="notice seed-notice">
+            <span>{missing.length === INSTANSI.length ? 'Instansi/lembaga belum dibuat.' : `${missing.length} instansi belum ada: ${missing.map((m) => m.name).join(', ')}.`}</span>
+            <button type="button" className="button primary sm" disabled={seedBusy} onClick={seedInstansi}><Building2 size={14} />{seedBusy ? 'Membuat…' : missing.length === INSTANSI.length ? 'Buat 6 instansi' : 'Lengkapi instansi'}</button>
+            {seedMsg && <span className="error">{seedMsg}</span>}
+          </div>
+        )}
 
         {groupsReady && (
           <div className="gbar" role="tablist" aria-label="Kelompok surat">
@@ -278,6 +345,12 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
           </div>
         )}
 
+        {groupsReady && groups.length > 0 && (
+          <div className="view-toggle" role="group" aria-label="Tampilan daftar surat">
+            <button type="button" className={`button ghost sm ${view === 'grouped' ? 'on' : ''}`} aria-pressed={view === 'grouped'} onClick={() => setView('grouped')}><Building2 size={14} />Per instansi</button>
+            <button type="button" className={`button ghost sm ${view === 'list' ? 'on' : ''}`} aria-pressed={view === 'list'} onClick={() => setView('list')}><List size={14} />Daftar biasa</button>
+          </div>
+        )}
         <div className="searchbox"><Search size={17} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nomor surat, perihal, penandatangan, atau kode…" /></div>
         <div className="filter-row">
           <label>Status
@@ -316,38 +389,20 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
         )}
         {bulkMsg && <p className="error">{bulkMsg}</p>}
 
-        <DocTable
-          docs={visible}
-          mineIds={new Set(steps.filter((x) => x.status === 'pending' && user && x.user_id === user.id).map((x) => x.document_id))}
-          groups={groupsReady ? groups : undefined}
-          selection={selection}
-          renderSigner={(d) => {
-            const st = stepsOf.get(d.id);
-            if (!st?.length) return d.signer_name || '—';
-            return <div className="schips">{st.map((s) => <span key={s.id} className={`schip ${s.status}`} title={s.signer_position || ''}>{s.step}. {s.signer_name}</span>)}</div>;
-          }}
-          statusExtra={(d) => {
-            if (d.status !== 'pending' || !d.created_at) return null;
-            const age = Math.floor((Date.now() - new Date(d.created_at).getTime()) / dayMs);
-            return age >= settings.reminder_days ? <span className="status attn" title="Menunggu tanda tangan cukup lama">Tertunda {age} hari</span> : null;
-          }}
-          renderGroup={canManage ? (d) => (
-            <select className="group-select" aria-label={`Kelompok untuk ${d.document_number}`} value={d.group_id && groups.some((g) => g.id === d.group_id) ? d.group_id : ''} onChange={(e) => setGroup([d.id], e.target.value || null)}>
-              <option value="">—</option>
-              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-          ) : (d) => <GroupChip group={groups.find((g) => g.id === d.group_id)} />}
-          actions={user ? (d) => (
-            <div className="row-actions">
-              <button className="button ghost sm" onClick={() => setDetail(d)}><Eye size={13} />Detail</button>
-              {d.file_path && <button className="button ghost sm" onClick={() => openFile(d)}>Unduh</button>}
-              {EDITABLE_STATUSES.includes(d.status) && <button className="button ghost sm" onClick={() => setEditing(d)}>{d.status === 'rejected' ? 'Revisi' : 'Edit'}</button>}
-              {EDITABLE_STATUSES.includes(d.status) && <button className="button danger sm" onClick={() => removeUnsigned(d)}>Hapus</button>}
-              {isAdmin && d.status === 'verified' && <button className="button danger sm" onClick={() => revoke(d)}>Cabut</button>}
-              {isAdmin && (d.status === 'verified' || d.status === 'revoked') && <button className="button danger sm" title="Hapus permanen dokumen bertanda tangan" onClick={() => setPurging(d)}><Trash2 size={13} />Hapus permanen</button>}
-            </div>
-          ) : undefined}
-        />
+        {showGrouped ? (
+          <div className="inst-sections">
+            {sections.map((sec) => (
+              <details className="inst-section" key={sec.id} open={sec.list.length > 0}>
+                <summary>
+                  {sec.group ? <span className="gchip" style={{ ['--gc' as any]: sec.group.color }}><i />{sec.group.name}</span> : <span className="gchip" style={{ ['--gc' as any]: '#64748B' }}><i />Tanpa instansi</span>}
+                  {sec.group?.code && <small className="mono code-sm">{sec.group.code}</small>}
+                  <b className="inst-count">{sec.list.length} surat</b>
+                </summary>
+                {sec.list.length ? renderTable(sec.list) : <p className="muted small inst-empty">Belum ada surat untuk instansi ini.</p>}
+              </details>
+            ))}
+          </div>
+        ) : renderTable(visible)}
         {visible.length === 0 && docs.length > 0 && <p className="muted">Tidak ada surat yang cocok dengan filter.</p>}
       </section>
 
@@ -368,9 +423,9 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
             </label>
             <label>Perihal / nama dokumen<input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Surat Undangan Rapat" /></label>
             {groupsReady && (
-              <label>Kelompok surat
-                <select value={upGroup} onChange={(e) => setUpGroup(e.target.value)}>
-                  <option value="">Tanpa kelompok</option>
+              <label>Instansi / lembaga
+                <select required value={upGroup} onChange={(e) => setUpGroup(e.target.value)}>
+                  <option value="">Pilih instansi / lembaga…</option>
                   {groups.map((g) => <option value={g.id} key={g.id}>{g.name}</option>)}
                 </select>
               </label>

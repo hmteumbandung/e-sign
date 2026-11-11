@@ -167,6 +167,8 @@ Ubah nama dan NIM, ganti email (konfirmasi via email), ganti password (memverifi
 - Super Admin terakhir tidak dapat dihapus. Super Admin dapat menghapus akun lain di **Manajemen Akun**.
 
 ### Kelompok surat
+**Instansi/lembaga (6 bawaan):** Himpunan Mahasiswa Teknik Elektro, Badan Pengurus Harian, Departemen Riset dan Teknologi, Departemen Pengembangan Sumber Daya Manusia, Departemen Komunikasi dan Informasi, Departemen Ekonomi dan Bisnis. Buat lewat tombol **Buat 6 instansi** di Manajemen Dokumen (admin/sekretaris) atau jalankan `supabase/instansi-setup.sql`. Surat tampil terkelompok per instansi (toggle **Per instansi / Daftar biasa**), instansi wajib dipilih saat unggah, dan 6 instansi bawaan tidak dapat dihapus atau diganti namanya.
+
 Di **Manajemen Dokumen**: buat/ubah/hapus kelompok (nama, warna, keterangan), filter per kelompok, pindahkan satu surat lewat dropdown atau banyak surat sekaligus (centang lalu **Terapkan**). Menghapus kelompok tidak menghapus surat. Kelompok juga dapat dipilih saat unggah, edit, dan penandatanganan.
 
 ### Hapus surat terverifikasi

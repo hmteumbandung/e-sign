@@ -208,4 +208,4 @@ Halaman Verifikasi kini memakai fungsi `verify_document`, sehingga tabel dokumen
 - **Pengurus:** edit data, nonaktifkan/arsipkan (tanda tangan tidak dapat dipakai lagi), arsipkan satu periode, impor Excel/CSV (templat tersedia di dialog impor), ekspor.
 - **Ekspor Excel/CSV** untuk dokumen, pengurus, surat masuk, dan riwayat aktivitas; **unduh banyak PDF sebagai ZIP** (centang dokumen).
 - **Footer QR:** bawaan 17 × 2 cm di tengah bawah halaman; lebar dan tinggi dapat diatur dalam cm. Teks footer dapat disimpan sebagai **default tim** (admin/sekretaris).
-- **Dashboard:** grafik surat per bulan dan daftar dokumen yang menunggu terlalu lama. **Mode gelap** dan perbaikan tampilan ponsel.
+- **Dashboard:** grafik surat per bulan dan daftar dokumen yang menunggu terlalu lama. perbaikan tampilan ponsel.

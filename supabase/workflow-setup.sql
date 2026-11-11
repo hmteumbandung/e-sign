@@ -176,20 +176,9 @@ end $$;
 revoke all on function public.preview_document_number(uuid, date), public.next_document_number(uuid, date) from public, anon;
 grant execute on function public.preview_document_number(uuid, date), public.next_document_number(uuid, date) to authenticated;
 
--- Nomor surat tidak boleh ganda (dicek saat tambah/ubah nomor; data lama yang sudah ganda tidak terpengaruh)
-create or replace function public.documents_unique_number() returns trigger
-language plpgsql security definer set search_path = public as $$
-begin
-  if tg_op = 'INSERT' or new.document_number is distinct from old.document_number then
-    if exists (select 1 from public.documents x where lower(btrim(x.document_number)) = lower(btrim(new.document_number)) and x.id <> new.id) then
-      raise exception 'Nomor surat "%" sudah dipakai dokumen lain', new.document_number;
-    end if;
-  end if;
-  return new;
-end $$;
+-- Nomor surat BOLEH sama: pembatasan nomor ganda sengaja dihapus.
 drop trigger if exists documents_unique_number_trg on public.documents;
-create trigger documents_unique_number_trg before insert or update of document_number on public.documents
-  for each row execute function public.documents_unique_number();
+drop function if exists public.documents_unique_number();
 
 ------------------------------------------------------------------
 -- 5. Alur persetujuan

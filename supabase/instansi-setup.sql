@@ -138,3 +138,10 @@ end $$;
 drop trigger if exists documents_guard_letter_type on public.documents;
 create trigger documents_guard_letter_type before update on public.documents
   for each row execute function public.guard_letter_type();
+
+------------------------------------------------------------------
+-- Hapus pembatasan nomor surat ganda (nomor yang sama boleh dipakai lagi).
+-- Penomoran otomatis tetap berurutan; hanya pengecekan saat simpan/ubah nomor yang dihilangkan.
+------------------------------------------------------------------
+drop trigger if exists documents_unique_number_trg on public.documents;
+drop function if exists public.documents_unique_number();

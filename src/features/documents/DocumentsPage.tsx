@@ -7,7 +7,7 @@ import EditDocumentPanel, { EDITABLE_STATUSES } from './EditDocumentPanel';
 import DocumentDetail from './DocumentDetail';
 import GroupManager from './GroupManager';
 import SignerListEditor, { type SignMode } from './SignerListEditor';
-import { INSTANSI, missingInstansi } from '../../lib/instansi';
+import { INSTANSI, JENIS_SURAT, jenisLabel, jenisOf, missingInstansi } from '../../lib/instansi';
 import { downloadCsv, downloadXlsx, downloadZip, stamp, type Cell } from '../../lib/exporter';
 import type { AppSettings, Doc, DocGroup, DocSigner, Signer } from '../../types';
 
@@ -38,6 +38,7 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
   const [ownerIds, setOwnerIds] = useState<string[]>(['']);
   const [mode, setMode] = useState<SignMode>('sequential');
   const [upGroup, setUpGroup] = useState('');
+  const [upType, setUpType] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [upMsg, setUpMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -48,6 +49,7 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
   const [q, setQ] = useState('');
   const [statusF, setStatusF] = useState('');
   const [signerF, setSignerF] = useState('');
+  const [typeF, setTypeF] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [manageGroups, setManageGroups] = useState(false);
@@ -85,30 +87,31 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
       if (filter === 'none' && d.group_id && groups.some((g) => g.id === d.group_id)) return false;
       if (filter !== 'all' && filter !== 'none' && d.group_id !== filter) return false;
       if (statusF && d.status !== statusF) return false;
+      if (typeF && d.letter_type !== typeF) return false;
       if (signerF && !(stepsOf.get(d.id) || []).some((s) => s.signer_name === signerF) && d.signer_name !== signerF) return false;
       const dd = docDate(d);
       if (from && dd < from) return false;
       if (to && dd > to) return false;
       if (!needle) return true;
       const sg = (stepsOf.get(d.id) || []).map((s) => s.signer_name).join(' ');
-      return [d.document_number, d.title, d.signer_name || '', sg, d.short_code || '', statusLabel[d.status] || d.status].join(' ').toLowerCase().includes(needle);
+      return [d.document_number, d.title, d.signer_name || '', sg, d.short_code || '', statusLabel[d.status] || d.status, jenisLabel(d.letter_type)].join(' ').toLowerCase().includes(needle);
     });
-  }, [docs, groups, filter, q, statusF, signerF, from, to, stepsOf]);
+  }, [docs, groups, filter, q, statusF, typeF, signerF, from, to, stepsOf]);
 
   const selectedVisible = visible.filter((d) => selected.has(d.id));
-  const filtersOn = Boolean(q || statusF || signerF || from || to || filter !== 'all');
+  const filtersOn = Boolean(q || statusF || typeF || signerF || from || to || filter !== 'all');
 
   // Nomor surat otomatis (dapat diubah manual); mengikuti kelompok yang dipilih
   useEffect(() => {
     if (!supabase || !canManage || numTouched) return;
     let off = false;
-    supabase.rpc('preview_document_number', { p_group: upGroup || null }).then(({ data, error }) => {
+    supabase.rpc('preview_document_number', { p_group: upGroup || null, p_type: upType || null }).then(({ data, error }) => {
       if (off || error || !data) return;
       autoNum.current = data as string;
       setNumber(data as string);
     });
     return () => { off = true; };
-  }, [upGroup, canManage, numTouched, docs.length]);
+  }, [upGroup, upType, canManage, numTouched, docs.length]);
 
   const missing = useMemo(() => missingInstansi(groups), [groups]);
 
@@ -186,10 +189,10 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
   // ---- ekspor & unduh massal ----
   const groupName = (d: Doc) => groups.find((g) => g.id === d.group_id)?.name || '';
   function exportRows(list: Doc[]): Cell[][] {
-    const head = ['Nomor surat', 'Perihal', 'Kelompok', 'Penandatangan', 'Status', 'Tanggal surat', 'Waktu tanda tangan', 'Kode singkat', 'Verification ID', 'SHA-256', 'Revisi', 'Catatan penolakan'];
+    const head = ['Nomor surat', 'Perihal', 'Instansi', 'Jenis surat', 'Penandatangan', 'Status', 'Tanggal surat', 'Waktu tanda tangan', 'Kode singkat', 'Verification ID', 'SHA-256', 'Revisi', 'Catatan penolakan'];
     return [head, ...list.map((d) => {
       const sg = (stepsOf.get(d.id) || []).map((s) => `${s.step}. ${s.signer_name}${s.status === 'signed' ? ' ✓' : ''}`).join('; ') || d.signer_name || '';
-      return [d.document_number, d.title, groupName(d), sg, statusLabel[d.status] || d.status, docDate(d), fmtDT(d.signed_at), d.short_code || '', d.verification_id, d.sha256 || '', d.revision || 1, d.reject_reason || ''];
+      return [d.document_number, d.title, groupName(d), jenisLabel(d.letter_type), sg, statusLabel[d.status] || d.status, docDate(d), fmtDT(d.signed_at), d.short_code || '', d.verification_id, d.sha256 || '', d.revision || 1, d.reject_reason || ''];
     })];
   }
   const exportList = selectedVisible.length ? selectedVisible : visible;
@@ -238,21 +241,21 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
 
       let num = number.trim();
       if (!num || num === autoNum.current) { // ambil nomor resmi secara atomik (menghindari nomor ganda)
-        const rr = await supabase.rpc('next_document_number', { p_group: upGroup || null });
+        const rr = await supabase.rpc('next_document_number', { p_group: upGroup || null, p_type: upType || null });
         if (rr.error) { if (!num) throw rr.error; } else num = rr.data as string;
       }
       const first = owners.find((o) => o.id === chosen[0]);
       const ins = await supabase.from('documents').insert({
         document_number: num, title, signer_name: first?.full_name || null, signer_user_id: first?.user_id ?? null,
         issued_at: new Date().toISOString().slice(0, 10), status: 'pending', verification_id: id, sha256: hash, file_path: path, sign_mode: mode,
-        ...(groupsReady && upGroup ? { group_id: upGroup } : {}),
+        ...(groupsReady && upGroup ? { group_id: upGroup } : {}), ...(upType ? { letter_type: upType } : {}),
       }).select('id').single();
       if (ins.error) throw ins.error;
       docId = ins.data.id;
       const sg = await supabase.rpc('set_document_signers', { p_doc: docId, p_signers: chosen.map((o) => ({ owner_id: o })), p_mode: mode });
       if (sg.error) throw sg.error;
 
-      setNumTouched(false); setTitle(''); setFile(null); setOwnerIds(['']); setMode('sequential');
+      setNumTouched(false); setTitle(''); setFile(null); setUpType(''); setOwnerIds(['']); setMode('sequential');
       setUpMsg({ kind: 'ok', text: `Dokumen ${num} diarsipkan dan menunggu tanda tangan. Buka Detail untuk mengirim tautan permintaan tanda tangan.` });
       await reload();
     } catch (e: any) {
@@ -359,6 +362,12 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
               {Object.entries(statusLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </label>
+          <label>Jenis surat
+            <select value={typeF} onChange={(e) => setTypeF(e.target.value)}>
+              <option value="">Semua jenis</option>
+              {JENIS_SURAT.map((j) => <option key={j.code} value={j.code}>{j.code} · {j.name} ({j.abbr})</option>)}
+            </select>
+          </label>
           <label>Penandatangan
             <select value={signerF} onChange={(e) => setSignerF(e.target.value)}>
               <option value="">Semua</option>
@@ -367,7 +376,7 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
           </label>
           <label>Dari tanggal<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
           <label>Sampai tanggal<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-          {filtersOn && <button type="button" className="button ghost sm" onClick={() => { setQ(''); setStatusF(''); setSignerF(''); setFrom(''); setTo(''); setFilter('all'); }}>Reset filter</button>}
+          {filtersOn && <button type="button" className="button ghost sm" onClick={() => { setQ(''); setStatusF(''); setTypeF(''); setSignerF(''); setFrom(''); setTo(''); setFilter('all'); }}>Reset filter</button>}
         </div>
 
         {canManage && selectedVisible.length > 0 && (
@@ -398,7 +407,19 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
                   {sec.group?.code && <small className="mono code-sm">{sec.group.code}</small>}
                   <b className="inst-count">{sec.list.length} surat</b>
                 </summary>
-                {sec.list.length ? renderTable(sec.list) : <p className="muted small inst-empty">Belum ada surat untuk instansi ini.</p>}
+                {sec.list.length ? (
+                  <div className="jenis-sections">
+                    {[...JENIS_SURAT.map((j) => ({ code: j.code as string, label: `${j.code} · ${j.name} (${j.abbr})` })), { code: '', label: 'Tanpa jenis surat' }]
+                      .map((j) => ({ ...j, list: sec.list.filter((d) => (jenisOf(d.letter_type)?.code || '') === j.code) }))
+                      .filter((j) => j.list.length > 0)
+                      .map((j) => (
+                        <details className="jenis-section" key={j.code || 'none'} open>
+                          <summary><span className="jenis-tag">{j.label}</span><b className="inst-count">{j.list.length} surat</b></summary>
+                          {renderTable(j.list)}
+                        </details>
+                      ))}
+                  </div>
+                ) : <p className="muted small inst-empty">Belum ada surat untuk instansi ini.</p>}
               </details>
             ))}
           </div>
@@ -422,6 +443,12 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
               <input required value={number} onChange={(e) => { setNumTouched(true); setNumber(e.target.value); }} placeholder="001/HMTE/XI/2026" />
             </label>
             <label>Perihal / nama dokumen<input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Surat Undangan Rapat" /></label>
+            <label>Jenis surat
+              <select required value={upType} onChange={(e) => setUpType(e.target.value)}>
+                <option value="">Pilih jenis surat…</option>
+                {JENIS_SURAT.map((j) => <option key={j.code} value={j.code}>{j.code} · {j.name} ({j.abbr})</option>)}
+              </select>
+            </label>
             {groupsReady && (
               <label>Instansi / lembaga
                 <select required value={upGroup} onChange={(e) => setUpGroup(e.target.value)}>

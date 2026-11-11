@@ -24,6 +24,7 @@ export type Doc = {
   original_file_path?: string | null;
   signer_user_id?: string | null;
   group_id?: string | null;
+  letter_type?: string | null;
   short_code?: string | null;
   created_at?: string;
   signed_at?: string | null;

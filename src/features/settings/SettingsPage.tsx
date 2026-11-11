@@ -9,7 +9,7 @@ type Props = { settings: AppSettings; user: any; isAdmin: boolean; onSaved: () =
 const preview = (fmt: string, pad: string) => {
   const d = new Date();
   const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-  return fmt.replace('{no}', '1'.padStart(Number(pad) || 3, '0')).replace('{bulan_romawi}', roman[d.getMonth()]).replace('{bulan}', String(d.getMonth() + 1).padStart(2, '0')).replace('{tahun}', String(d.getFullYear())).replace('{kode}', 'UMUM');
+  return fmt.replace('{no}', '1'.padStart(Number(pad) || 3, '0')).replace('{bulan_romawi}', roman[d.getMonth()]).replace('{bulan}', String(d.getMonth() + 1).padStart(2, '0')).replace('{tahun}', String(d.getFullYear())).replace('{kode}', 'UMUM').replace('{jenis}', '04').replace('{singkatan}', 'SU');
 };
 
 /** Pengaturan bersama: format nomor surat, teks footer QR, dan batas pengingat dokumen tertunda. */
@@ -55,7 +55,7 @@ export default function SettingsPage({ settings, user, isAdmin, onSaved }: Props
       <form className="acc-form wide-form" onSubmit={save}>
         <h4>Penomoran surat otomatis</h4>
         <label>Format nomor<input value={fmt} maxLength={80} onChange={(e) => setFmt(e.target.value)} /></label>
-        <p className="muted small">Token: <span className="mono">{'{no} {bulan} {bulan_romawi} {tahun} {kode}'}</span>. Contoh hasil: <b className="mono">{preview(fmt, pad)}</b>. Kelompok surat dapat memakai format dan kode sendiri.</p>
+        <p className="muted small">Token: <span className="mono">{'{no} {bulan} {bulan_romawi} {tahun} {kode} {jenis} {singkatan}'}</span>. Contoh hasil: <b className="mono">{preview(fmt, pad)}</b>. Kelompok surat dapat memakai format dan kode sendiri.</p>
         <div className="num-grid">
           <label>Urutan kembali ke 001
             <select value={reset} onChange={(e) => setReset(e.target.value as AppSettings['number_reset'])}>

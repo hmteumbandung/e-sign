@@ -29,3 +29,20 @@ export function sortGroups(list: DocGroup[]): DocGroup[] {
 
 /** Instansi bawaan yang belum ada di database. */
 export const missingInstansi = (groups: DocGroup[]) => INSTANSI.filter((i) => !groups.some((g) => norm(g.name) === norm(i.name)));
+
+/** 10 jenis surat; berlaku untuk setiap instansi. Kode (01-10) dipakai token {jenis} pada nomor surat. */
+export const JENIS_SURAT = [
+  { code: '01', abbr: 'SK', name: 'Surat Ketetapan' },
+  { code: '02', abbr: 'Skep', name: 'Surat Keputusan' },
+  { code: '03', abbr: 'SR', name: 'Surat Rekomendasi' },
+  { code: '04', abbr: 'SU', name: 'Surat Undangan' },
+  { code: '05', abbr: 'ST', name: 'Surat Tugas' },
+  { code: '06', abbr: 'SM', name: 'Surat Mandat' },
+  { code: '07', abbr: 'SI', name: 'Surat Izin' },
+  { code: '08', abbr: 'Spm', name: 'Surat Permohonan' },
+  { code: '09', abbr: 'SP', name: 'Surat Peringatan' },
+  { code: '10', abbr: 'SPem', name: 'Surat Pemberitahuan' },
+] as const;
+
+export const jenisOf = (code?: string | null) => JENIS_SURAT.find((j) => j.code === code);
+export const jenisLabel = (code?: string | null) => { const j = jenisOf(code); return j ? `${j.code} · ${j.name} (${j.abbr})` : ''; };

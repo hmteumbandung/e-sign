@@ -1,3 +1,4 @@
+import { JENIS_SURAT } from '../../lib/instansi';
 import { useMemo, useState } from 'react';
 import { RefreshCcw, Save, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -32,6 +33,7 @@ export default function EditDocumentPanel({ doc, steps, signers, groups = [], on
   const [ownerIds, setOwnerIds] = useState<string[]>(initialIds);
   const [mode, setMode] = useState<SignMode>(doc.sign_mode || 'sequential');
   const [groupId, setGroupId] = useState(doc.group_id || '');
+  const [letterType, setLetterType] = useState(doc.letter_type || '');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -52,7 +54,7 @@ export default function EditDocumentPanel({ doc, steps, signers, groups = [], on
       if (!lockSigners && signersChanged && chosen.length !== ownerIds.length) throw new Error('Lengkapi semua baris penandatangan atau hapus baris yang kosong.');
       if (resubmit && !chosen.length && !steps.length) throw new Error('Tentukan penandatangan terlebih dahulu.');
 
-      const patch: Record<string, unknown> = { document_number: number.trim(), title: title.trim(), ...(groups.length ? { group_id: groupId || null } : {}) };
+      const patch: Record<string, unknown> = { document_number: number.trim(), title: title.trim(), ...(groups.length ? { group_id: groupId || null } : {}), letter_type: letterType || null };
       if (file) {
         if (file.size > MAX_BYTES) throw new Error('Ukuran PDF maksimal 10 MB.');
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -104,13 +106,19 @@ export default function EditDocumentPanel({ doc, steps, signers, groups = [], on
         <label>Nomor surat<input required value={number} onChange={(e) => setNumber(e.target.value)} /></label>
         <label>Perihal / nama dokumen<input required value={title} onChange={(e) => setTitle(e.target.value)} /></label>
         {groups.length > 0 && (
-          <label>Kelompok surat
+          <label>Instansi / lembaga
             <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
               <option value="">Tanpa kelompok</option>
               {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           </label>
         )}
+        <label>Jenis surat
+          <select value={letterType} onChange={(e) => setLetterType(e.target.value)}>
+            <option value="">Tanpa jenis</option>
+            {JENIS_SURAT.map((j) => <option key={j.code} value={j.code}>{j.code} · {j.name} ({j.abbr})</option>)}
+          </select>
+        </label>
         <label>Ganti / revisi file PDF (opsional)<input type="file" disabled={lockFile} accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
         <div className="full">
           <span className="lbl">Penandatangan</span>

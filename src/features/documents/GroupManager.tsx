@@ -24,7 +24,7 @@ function NumberingFields({ v, onChange }: { v: NumFields; onChange: (n: NumField
           </select>
         </label>
       </div>
-      <p className="muted small">Token: <span className="mono">{'{no} {bulan} {bulan_romawi} {tahun} {kode}'}</span>. Contoh: <span className="mono">{'{no}/{kode}/HMTE/{bulan_romawi}/{tahun}'}</span>. Urutan dihitung terpisah untuk tiap kelompok.</p>
+      <p className="muted small">Token: <span className="mono">{'{no} {bulan} {bulan_romawi} {tahun} {kode} {jenis} {singkatan}'}</span>. Contoh: <span className="mono">{'{no}/{jenis}/{kode}/{bulan_romawi}/{tahun}'}</span>. Urutan dihitung terpisah untuk tiap instansi dan jenis surat.</p>
     </details>
   );
 }

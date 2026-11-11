@@ -2266,3 +2266,14 @@ a.button {
 [data-theme="dark"] .inst-section { background: #111827; border-color: #1f2937; }
 [data-theme="dark"] .inst-section .table-wrap { border-top-color: #1f2937; }
 [data-theme="dark"] .view-toggle .button.on { background: #2563eb; color: #fff; }
+
+/* ---- Jenis surat ---- */
+.jenis-tag { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.jenis-sections { display: grid; gap: 8px; padding: 0 10px 12px; }
+.jenis-section { border: 1px solid #e5e7eb; border-radius: 8px; }
+.jenis-section > summary { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.jenis-section > summary::-webkit-details-marker { display: none; }
+.jenis-section > summary::before { content: '▸'; color: #64748b; font-size: 12px; transition: transform .15s; }
+.jenis-section[open] > summary::before { transform: rotate(90deg); }
+[data-theme="dark"] .jenis-tag { background: #1e1b4b; color: #c7d2fe; }
+[data-theme="dark"] .jenis-section { border-color: #1f2937; }

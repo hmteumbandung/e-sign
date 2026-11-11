@@ -1,3 +1,4 @@
+import { JENIS_SURAT } from '../../lib/instansi';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AlignVerticalJustifyEnd, Ban, CheckCircle2, Copy, Download, FileUp, Hash, Image as ImageIcon, PenLine, QrCode, RotateCcw, Save, ShieldCheck, Trash2, Upload } from 'lucide-react';
@@ -69,6 +70,7 @@ export default function ESignPage({ signers, groups = [], settings, onSettingsSa
   const [footerMsg, setFooterMsg] = useState('');
   const [qrAllPages, setQrAllPages] = useState(false);
   const [groupId, setGroupId] = useState('');
+  const [letterType, setLetterType] = useState('');
   const pageRatio = useRef(0.707);
   const needSnap = useRef(false);
   const [qrPreview, setQrPreview] = useState('');
@@ -134,7 +136,7 @@ export default function ESignPage({ signers, groups = [], settings, onSettingsSa
     const sha256 = await sha256Hex(bytes);
     freshLoad.current = true;
     needSnap.current = true;
-    setGroupId('');
+    setGroupId(''); setLetterType('');
     setSourceDoc(null);
     setActiveStepId('');
     setPendingOk('');
@@ -199,7 +201,7 @@ export default function ESignPage({ signers, groups = [], settings, onSettingsSa
       if (d.sha256 && d.sha256 !== sha256) throw new Error('Isi file di arsip tidak cocok dengan SHA-256 yang tercatat. Dokumen mungkin berubah; hubungi admin.');
       freshLoad.current = true;
       needSnap.current = true;
-      setGroupId(d.group_id || '');
+      setGroupId(d.group_id || ''); setLetterType(d.letter_type || '');
       setExtras([]);
       setResult(null);
       setViewResult(false);
@@ -422,7 +424,7 @@ export default function ESignPage({ signers, groups = [], settings, onSettingsSa
 
   async function fillAutoNumber() {
     if (!supabase) return;
-    const r = await supabase.rpc('preview_document_number', { p_group: groupId || null });
+    const r = await supabase.rpc('preview_document_number', { p_group: groupId || null, p_type: letterType || null });
     if (r.error) { setSaveMsg(/function|schema cache/i.test(r.error.message) ? 'Penomoran otomatis belum aktif. Jalankan supabase/workflow-setup.sql.' : r.error.message); return; }
     autoNum.current = r.data as string;
     setDocNumber(r.data as string);
@@ -449,6 +451,7 @@ export default function ESignPage({ signers, groups = [], settings, onSettingsSa
           if (docNumber.trim() && docNumber.trim() !== sourceDoc.document_number) patch.document_number = docNumber.trim();
           if (docTitle.trim() !== sourceDoc.title) patch.title = docTitle.trim();
           if (groups.length && (groupId || null) !== (sourceDoc.group_id || null)) patch.group_id = groupId || null;
+          if ((letterType || null) !== (sourceDoc.letter_type || null)) patch.letter_type = letterType || null;
           if (Object.keys(patch).length) {
             const u = await supabase.from('documents').update(patch).eq('id', sourceDoc.id).eq('status', 'pending').select('id');
             if (u.error) throw u.error;
@@ -463,7 +466,7 @@ export default function ESignPage({ signers, groups = [], settings, onSettingsSa
       } else {
         let number = docNumber.trim();
         if (!number || number === autoNum.current) { // nomor otomatis: ambil nomor resmi secara atomik
-          const rr = await supabase.rpc('next_document_number', { p_group: groupId || null });
+          const rr = await supabase.rpc('next_document_number', { p_group: groupId || null, p_type: letterType || null });
           if (rr.error) throw rr.error;
           number = rr.data as string;
           setDocNumber(number);
@@ -473,7 +476,7 @@ export default function ESignPage({ signers, groups = [], settings, onSettingsSa
           status: 'verified', sha256: result.sha256, original_sha256: result.originalSha256, file_path: path,
           issued_at: wibDate(result.signedAt), signed_at: result.signedAt.toISOString(), signature_position: result.placement,
           document_number: number, title: docTitle.trim(), signer_name: signerName.trim(), verification_id: result.verificationId,
-          signer_user_id: owner?.user_id ?? null, ...(groups.length && groupId ? { group_id: groupId } : {}),
+          signer_user_id: owner?.user_id ?? null, ...(groups.length && groupId ? { group_id: groupId } : {}), ...(letterType ? { letter_type: letterType } : {}),
         }).select('id').single();
         if (ins.error) throw ins.error;
         const sg = await supabase.from('document_signers').insert({
@@ -702,10 +705,18 @@ export default function ESignPage({ signers, groups = [], settings, onSettingsSa
             {!sourceDoc && isAdmin && <button type="button" className="button ghost sm" onClick={fillAutoNumber}>Isi nomor otomatis</button>}
             <label className="field">Perihal<input value={docTitle} readOnly={lockMeta} onChange={(e) => setDocTitle(e.target.value)} placeholder="Surat Undangan Rapat" /></label>
             {groups.length > 0 && isAdmin && (
-              <label className="field">Kelompok surat
+              <label className="field">Instansi / lembaga
                 <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
                   <option value="">Tanpa kelompok</option>
                   {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </label>
+            )}
+            {groups.length > 0 && isAdmin && (
+              <label className="field">Jenis surat
+                <select value={letterType} onChange={(e) => setLetterType(e.target.value)}>
+                  <option value="">Tanpa jenis</option>
+                  {JENIS_SURAT.map((j) => <option key={j.code} value={j.code}>{j.code} · {j.name} ({j.abbr})</option>)}
                 </select>
               </label>
             )}

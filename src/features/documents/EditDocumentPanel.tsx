@@ -8,7 +8,7 @@ import type { DocGroup, DocSigner, Signer } from '../../types';
 
 export type EditableDoc = {
   id: string; document_number: string; title: string; signer_name: string | null; signer_user_id?: string | null;
-  verification_id: string; file_path: string | null; original_file_path?: string | null; status: string; group_id?: string | null;
+  verification_id: string; file_path: string | null; original_file_path?: string | null; status: string; group_id?: string | null; letter_type?: string | null;
   sign_mode?: SignMode; reject_reason?: string | null; revision?: number;
 };
 

@@ -13,7 +13,7 @@ import type { AppSettings, DocGroup, DocSigner } from '../../types';
 
 type Signer = { id: string; full_name: string; position: string; signature_path: string | null; user_id?: string | null; status?: string };
 type Props = { signers: Signer[]; groups?: DocGroup[]; settings?: AppSettings; onSettingsSaved?: () => void; user: any; role: string | null; reload: () => void };
-type PendingDoc = { id: string; document_number: string; title: string; signer_name: string | null; signer_user_id?: string | null; verification_id: string; sha256: string | null; file_path: string | null; group_id?: string | null; sign_mode?: string; revision?: number; original_sha256?: string | null };
+type PendingDoc = { id: string; document_number: string; title: string; signer_name: string | null; signer_user_id?: string | null; verification_id: string; sha256: string | null; file_path: string | null; group_id?: string | null; letter_type?: string | null; sign_mode?: string; revision?: number; original_sha256?: string | null };
 type Extra = { id: string; page: number; x: number; y: number; w: number };
 type Pos = { x: number; y: number; w: number };
 type Tab = 'draw' | 'upload' | 'db';

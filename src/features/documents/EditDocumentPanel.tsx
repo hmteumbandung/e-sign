@@ -20,12 +20,14 @@ type Props = {
   steps: DocSigner[];
   signers: Signer[];
   groups?: DocGroup[];
+  /** hanya admin/super admin yang boleh mengubah jenis surat */
+  isAdmin?: boolean;
   onClose: () => void;
   onSaved: () => void;
 };
 
 /** Panel edit dokumen yang belum selesai ditandatangani: metadata, kelompok, penandatangan (banyak), file revisi, dan ajukan ulang. */
-export default function EditDocumentPanel({ doc, steps, signers, groups = [], onClose, onSaved }: Props) {
+export default function EditDocumentPanel({ doc, steps, signers, groups = [], isAdmin = false, onClose, onSaved }: Props) {
   const activeOwners = useMemo(() => signers.filter((s) => (s.status ?? 'active') === 'active'), [signers]);
   const initialIds = useMemo(() => (steps.length ? [...steps].sort((a, b) => a.step - b.step).map((s) => s.owner_id || '') : ['']), [steps]);
   const [number, setNumber] = useState(doc.document_number);
@@ -54,7 +56,7 @@ export default function EditDocumentPanel({ doc, steps, signers, groups = [], on
       if (!lockSigners && signersChanged && chosen.length !== ownerIds.length) throw new Error('Lengkapi semua baris penandatangan atau hapus baris yang kosong.');
       if (resubmit && !chosen.length && !steps.length) throw new Error('Tentukan penandatangan terlebih dahulu.');
 
-      const patch: Record<string, unknown> = { document_number: number.trim(), title: title.trim(), ...(groups.length ? { group_id: groupId || null } : {}), letter_type: letterType || null };
+      const patch: Record<string, unknown> = { document_number: number.trim(), title: title.trim(), ...(groups.length ? { group_id: groupId || null } : {}), ...(isAdmin ? { letter_type: letterType || null } : {}) };
       if (file) {
         if (file.size > MAX_BYTES) throw new Error('Ukuran PDF maksimal 10 MB.');
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -113,12 +115,12 @@ export default function EditDocumentPanel({ doc, steps, signers, groups = [], on
             </select>
           </label>
         )}
-        <label>Jenis surat
+        {isAdmin && <label>Jenis surat
           <select value={letterType} onChange={(e) => setLetterType(e.target.value)}>
             <option value="">Tanpa jenis</option>
             {JENIS_SURAT.map((j) => <option key={j.code} value={j.code}>{j.code} · {j.name} ({j.abbr})</option>)}
           </select>
-        </label>
+        </label>}
         <label>Ganti / revisi file PDF (opsional)<input type="file" disabled={lockFile} accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
         <div className="full">
           <span className="lbl">Penandatangan</span>

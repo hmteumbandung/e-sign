@@ -25,6 +25,8 @@ type Props = {
   renderSigner?: (d: Doc) => React.ReactNode;
   /** tambahan di sel status (mis. penanda tertunda lama) */
   statusExtra?: (d: Doc) => React.ReactNode;
+  /** menggantikan tag Jenis (mis. dropdown untuk admin) */
+  renderJenis?: (d: Doc) => React.ReactNode;
 };
 
 export function GroupChip({ group }: { group?: DocGroup | null }) {
@@ -32,18 +34,18 @@ export function GroupChip({ group }: { group?: DocGroup | null }) {
   return <span className="gchip" style={{ ['--gc' as any]: group.color }}><i />{group.name}</span>;
 }
 
-export default function DocTable({ docs, actions, meId, mineIds, groups, renderGroup, selection, renderSigner, statusExtra }: Props) {
+export default function DocTable({ docs, actions, meId, mineIds, groups, renderGroup, selection, renderSigner, statusExtra, renderJenis }: Props) {
   const byId = new Map((groups || []).map((g) => [g.id, g]));
   const showGroup = Boolean(groups);
   const cols = 6 + (actions ? 1 : 0) + (showGroup ? 1 : 0) + (selection ? 1 : 0);
   const allOn = Boolean(selection) && docs.length > 0 && docs.every((d) => selection!.ids.has(d.id));
   return (
     <div className="table-wrap">
-      <table>
+      <table className="resp">
         <thead>
           <tr>
             {selection && <th className="cell-check"><input type="checkbox" aria-label="Pilih semua" checked={allOn} onChange={(e) => selection.toggleAll(docs.map((d) => d.id), e.target.checked)} /></th>}
-            <th>Nomor dokumen</th><th>Perihal</th><th>Jenis</th>{showGroup && <th>Kelompok</th>}<th>Penandatangan</th><th>Tanggal</th><th>Status</th>{actions && <th></th>}
+            <th>Nomor dokumen</th><th>Perihal</th><th>Jenis</th>{showGroup && <th>Instansi</th>}<th>Penandatangan</th><th>Tanggal</th><th>Status</th>{actions && <th></th>}
           </tr>
         </thead>
         <tbody>
@@ -51,19 +53,19 @@ export default function DocTable({ docs, actions, meId, mineIds, groups, renderG
             const mine = d.status === 'pending' && (mineIds ? mineIds.has(d.id) : Boolean(meId && d.signer_user_id === meId));
             return (
               <tr key={d.id} className={mine ? 'attention' : ''}>
-                {selection && <td className="cell-check"><input type="checkbox" aria-label={`Pilih ${d.document_number}`} checked={selection.ids.has(d.id)} onChange={() => selection.toggle(d.id)} /></td>}
-                <td><b>{d.document_number}</b>{d.short_code && <small className="mono code-sm">{d.short_code}</small>}</td>
-                <td>{d.title}</td>
-                <td>{jenisOf(d.letter_type) ? <span className="jenis-tag" title={jenisOf(d.letter_type)!.name}>{jenisOf(d.letter_type)!.code} · {jenisOf(d.letter_type)!.abbr}</span> : <span className="muted">—</span>}</td>
-                {showGroup && <td>{renderGroup ? renderGroup(d) : <GroupChip group={d.group_id ? byId.get(d.group_id) : null} />}</td>}
-                <td>{renderSigner ? renderSigner(d) : d.signer_name || '—'}</td>
-                <td>{d.issued_at || '—'}</td>
-                <td>
+                {selection && <td className="cell-check" data-label=""><input type="checkbox" aria-label={`Pilih ${d.document_number}`} checked={selection.ids.has(d.id)} onChange={() => selection.toggle(d.id)} /></td>}
+                <td data-label="Nomor" className="cell-num"><b>{d.document_number}</b>{d.short_code && <small className="mono code-sm">{d.short_code}</small>}</td>
+                <td data-label="Perihal" className="cell-title">{d.title}</td>
+                <td data-label="Jenis">{renderJenis ? renderJenis(d) : jenisOf(d.letter_type) ? <span className="jenis-tag" title={jenisOf(d.letter_type)!.name}>{jenisOf(d.letter_type)!.code} · {jenisOf(d.letter_type)!.abbr}</span> : <span className="muted">—</span>}</td>
+                {showGroup && <td data-label="Instansi">{renderGroup ? renderGroup(d) : <GroupChip group={d.group_id ? byId.get(d.group_id) : null} />}</td>}
+                <td data-label="Penandatangan">{renderSigner ? renderSigner(d) : d.signer_name || '—'}</td>
+                <td data-label="Tanggal">{d.issued_at || '—'}</td>
+                <td data-label="Status">
                   <span className={`status ${d.status === 'verified' ? 'good' : d.status === 'revoked' ? 'bad' : 'pending'}`}>{statusLabel[d.status] || d.status}</span>
                   {mine && <span className="status attn">Perlu TTE Anda</span>}
                   {statusExtra?.(d)}
                 </td>
-                {actions && <td>{actions(d)}</td>}
+                {actions && <td data-label="" className="cell-actions">{actions(d)}</td>}
               </tr>
             );
           })}

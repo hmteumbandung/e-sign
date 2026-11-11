@@ -59,6 +59,7 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
   const [zipBusy, setZipBusy] = useState('');
   const [purging, setPurging] = useState<Doc | null>(null);
   const [view, setView] = useState<'grouped' | 'list'>('grouped');
+  const [bulkType, setBulkType] = useState('');
   const [seedBusy, setSeedBusy] = useState(false);
   const [seedMsg, setSeedMsg] = useState('');
 
@@ -180,6 +181,22 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
     return true;
   }
 
+  /** Ubah jenis surat (hanya admin/super admin; dijaga juga di database). */
+  async function setLetterType(ids: string[], code: string | null) {
+    if (!supabase || !isAdmin || !ids.length) return false;
+    const r = await supabase.from('documents').update({ letter_type: code }).in('id', ids).select('id');
+    if (r.error) { alert(/letter_type|schema cache/i.test(r.error.message) ? 'Fitur jenis surat belum aktif di database. Jalankan supabase/instansi-setup.sql.' : r.error.message); return false; }
+    setBulkMsg((r.data?.length || 0) < ids.length ? `${r.data?.length || 0} dari ${ids.length} surat diperbarui.` : '');
+    await reload();
+    return true;
+  }
+
+  async function applyBulkType() {
+    if (!bulkType) return;
+    const ok = await setLetterType(selectedVisible.map((d) => d.id), bulkType === '__none' ? null : bulkType);
+    if (ok) { setSelected(new Set()); setBulkType(''); }
+  }
+
   async function applyBulk() {
     if (!bulkGroup) return;
     const ok = await setGroup(selectedVisible.map((d) => d.id), bulkGroup === '__none' ? null : bulkGroup);
@@ -282,6 +299,12 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
       const age = Math.floor((Date.now() - new Date(d.created_at).getTime()) / dayMs);
       return age >= settings.reminder_days ? <span className="status attn" title="Menunggu tanda tangan cukup lama">Tertunda {age} hari</span> : null;
     }}
+    renderJenis={isAdmin ? (d) => (
+      <select className="group-select" aria-label={`Jenis surat untuk ${d.document_number}`} value={jenisOf(d.letter_type)?.code || ''} onChange={(e) => setLetterType([d.id], e.target.value || null)}>
+        <option value="">—</option>
+        {JENIS_SURAT.map((j) => <option key={j.code} value={j.code}>{j.code} · {j.abbr}</option>)}
+      </select>
+    ) : undefined}
     renderGroup={canManage ? (d) => (
       <select className="group-select" aria-label={`Kelompok untuk ${d.document_number}`} value={d.group_id && groups.some((g) => g.id === d.group_id) ? d.group_id : ''} onChange={(e) => setGroup([d.id], e.target.value || null)}>
         <option value="">—</option>
@@ -301,14 +324,16 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
   />
   );
 
-  const showGrouped = view === 'grouped' && filter === 'all' && groupsReady && groups.length > 0;
+  const showGrouped = view === 'grouped' && groupsReady && groups.length > 0;
   const sections = useMemo(() => {
-    const filtered = filtersOn;
+    const filtered = filtersOn || filter !== 'all';
     const secs = groups.map((g) => ({ id: g.id, group: g as DocGroup | null, list: visible.filter((d) => d.group_id === g.id) }));
     const none = visible.filter((d) => !d.group_id || !groups.some((g) => g.id === d.group_id));
     if (none.length) secs.push({ id: '__none', group: null, list: none });
     return filtered ? secs.filter((x) => x.list.length > 0) : secs;
-  }, [groups, visible, filtersOn]);
+  }, [groups, visible, filtersOn, filter]);
+  /** Daftar surat tersembunyi secara default; terbuka otomatis saat memilih tab instansi atau memakai pencarian/filter. */
+  const narrowed = filtersOn || filter !== 'all';
 
   const selection = canManage ? {
     ids: selected,
@@ -392,6 +417,16 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
                 <button type="button" className="button primary sm" disabled={!bulkGroup} onClick={applyBulk}><FolderInput size={14} />Terapkan</button>
               </>
             )}
+            {isAdmin && (
+              <>
+                <select value={bulkType} onChange={(e) => setBulkType(e.target.value)} aria-label="Ubah jenis surat">
+                  <option value="">Ubah jenis surat…</option>
+                  {JENIS_SURAT.map((j) => <option key={j.code} value={j.code}>{j.code} · {j.name} ({j.abbr})</option>)}
+                  <option value="__none">Tanpa jenis</option>
+                </select>
+                <button type="button" className="button primary sm" disabled={!bulkType} onClick={applyBulkType}>Terapkan jenis</button>
+              </>
+            )}
             <button type="button" className="button ghost sm" disabled={Boolean(zipBusy)} onClick={downloadZipSelected}><Archive size={14} />{zipBusy || 'Unduh PDF (ZIP)'}</button>
             <button type="button" className="button ghost sm" onClick={() => setSelected(new Set())}>Batal pilih</button>
           </div>
@@ -401,7 +436,7 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
         {showGrouped ? (
           <div className="inst-sections">
             {sections.map((sec) => (
-              <details className="inst-section" key={sec.id} open={sec.list.length > 0}>
+              <details className="inst-section" key={`${sec.id}-${narrowed}`} open={narrowed || undefined} style={{ ['--gc' as any]: sec.group?.color || '#64748B' }}>
                 <summary>
                   {sec.group ? <span className="gchip" style={{ ['--gc' as any]: sec.group.color }}><i />{sec.group.name}</span> : <span className="gchip" style={{ ['--gc' as any]: '#64748B' }}><i />Tanpa instansi</span>}
                   {sec.group?.code && <small className="mono code-sm">{sec.group.code}</small>}
@@ -413,7 +448,7 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
                       .map((j) => ({ ...j, list: sec.list.filter((d) => (jenisOf(d.letter_type)?.code || '') === j.code) }))
                       .filter((j) => j.list.length > 0)
                       .map((j) => (
-                        <details className="jenis-section" key={j.code || 'none'} open>
+                        <details className="jenis-section" key={`${j.code || 'none'}-${filtersOn}`} open={filtersOn || undefined}>
                           <summary><span className="jenis-tag">{j.label}</span><b className="inst-count">{j.list.length} surat</b></summary>
                           {renderTable(j.list)}
                         </details>
@@ -432,7 +467,7 @@ export default function DocumentsPage({ docs, steps, signers, groups, groupsRead
       )}
 
       {editing && user && (
-        <EditDocumentPanel key={editing.id} doc={editing as any} steps={stepsOf.get(editing.id) || []} signers={signers} groups={groupsReady ? groups : []} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
+        <EditDocumentPanel key={editing.id} doc={editing as any} steps={stepsOf.get(editing.id) || []} signers={signers} groups={groupsReady ? groups : []} isAdmin={isAdmin} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
       )}
 
       <section className="panel">

@@ -119,3 +119,22 @@ where coalesce(number_format, '') = ''
   and lower(btrim(name)) in (
     'himpunan mahasiswa teknik elektro', 'badan pengurus harian', 'departemen riset dan teknologi',
     'departemen pengembangan sumber daya manusia', 'departemen komunikasi dan informasi', 'departemen ekonomi dan bisnis');
+
+------------------------------------------------------------------
+-- Hanya admin / super admin yang boleh MENGUBAH jenis surat setelah surat dibuat
+-- (menetapkan jenis saat unggah awal tetap diperbolehkan untuk sekretaris).
+------------------------------------------------------------------
+create or replace function public.guard_letter_type() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.letter_type is distinct from old.letter_type
+     and auth.uid() is not null
+     and coalesce(public.current_role() in ('super_admin', 'admin'), false) = false then
+    raise exception 'Hanya admin atau super admin yang dapat mengubah jenis surat';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists documents_guard_letter_type on public.documents;
+create trigger documents_guard_letter_type before update on public.documents
+  for each row execute function public.guard_letter_type();
